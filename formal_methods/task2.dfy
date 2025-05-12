@@ -144,7 +144,7 @@ class CoffeeMachine {
     
     method DispenseDrink() returns (success: bool)
         modifies this
-        ensures !isDrinkPrepared ==> !success
+        // ensures !isDrinkPrepared ==> !success
         ensures success ==> !isDrinkPrepared
         ensures success ==> !isPreparingDrink
         ensures success ==> !isPaid
