@@ -1,0 +1,38 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "artaxor-flower-tutorial"
+version = "1.0.0"
+description = "Federated Learning for ArTaxOr dataset using Flower"
+license = {text = "Apache License (2.0)"}
+dependencies = [
+    "flwr[simulation]>=1.12.0",
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "pillow>=10.0.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+
+[tool.flwr.app]
+publisher = "flwrlabs"
+
+[tool.flwr.app.components]
+serverapp = "server_app:app"
+clientapp = "client_app:app"
+
+[tool.flwr.app.config]
+num-server-rounds = 5
+fraction-train = 0.5
+local-epochs = 3
+lr = 0.001
+data-dir = "./artaxor_data"
+
+[tool.flwr.federations]
+default = "local-simulation"
+
+[tool.flwr.federations.local-simulation]
+options.num-supernodes = 10
