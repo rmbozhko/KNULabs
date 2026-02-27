@@ -169,7 +169,7 @@ class ArTaxOrDataModule(pl.LightningDataModule):
                 if img_name:
                     image_path = order_dir / img_name
                 else:
-                    image_path = order_dir / f\"{ann_path.stem}.jpg\"
+                    image_path = order_dir / f"{ann_path.stem}.jpg"
                 
                 samples.append(Sample(image_path=image_path, ann_path=ann_path, order_name=order))
         if not samples:
