@@ -1,0 +1,17 @@
+{
+  "image_path": "dataset\\Focus_3_-_Student_book_-_2020\\images\\page_001.png",
+  "image_size": {
+    "width": 2481,
+    "height": 3509
+  },
+  "tokens": [],
+  "bboxes": [],
+  "bboxes_pixel": [],
+  "image": "http://localhost:8081/dataset/Focus_3_-_Student_book_-_2020/images/page_001.png",
+  "_dropped": [],
+  "_stats": {
+    "tokens_before": 0,
+    "tokens_after": 0,
+    "dropped": 0
+  }
+}

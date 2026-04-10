@@ -1,0 +1,7 @@
+{
+  "O": 0,
+  "B-INSTRUCTION": 1,
+  "I-INSTRUCTION": 2,
+  "B-CONTENT": 3,
+  "I-CONTENT": 4
+}
