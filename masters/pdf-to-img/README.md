@@ -11,7 +11,7 @@ Creds: ```admin@admin.com/qwerty12345```
 
 6. Export annotations from Label Studio as JSON.
 
-7. Map token labels to blocks: `python .\post_labelling_mapping.py --input .\project-6-at-2026-03-31-15-30-3adfa9dd.json --output dataset/Focus_3_-_Student_book_-_2020/mapped`
+7. Map token to labels: `python .\post_labelling_mapping.py --input .\project-6-at-2026-03-31-15-30-3adfa9dd.json --output dataset/Focus_3_-_Student_book_-_2020/mapped`
 
-8. Build HF dataset: `python build_dataset.py --input dataset/Focus_3_-_Student_book_-_2020/mapped --output dataset/Focus_3_-_Student_book_-_2020/hf_dataset`
+8. Build HF dataset: `python build_block_dataset.py --input dataset/Focus_3_-_Student_book_-_2020/mapped --output dataset/Focus_3_-_Student_book_-_2020/hf_dataset`
 
