@@ -48,43 +48,14 @@ except ImportError:
 # Label schema
 # ──────────────────────────────────────────────────────────────────────────────
 
-# BIO encoding for token classification
-# B- = beginning of a span, I- = inside a span
 LABELS = [
-    "O",            # maps from OTHER / unlabeled
-    "B-INSTRUCTION",
-    "I-INSTRUCTION",
-    "B-CONTENT",
-    "I-CONTENT",
+    "INSTRUCTION",            # maps from OTHER / unlabeled
+    "CONTENT",
+    "OTHER"
 ]
 
 LABEL2ID = {l: i for i, l in enumerate(LABELS)}
 ID2LABEL = {i: l for l, i in LABEL2ID.items()}
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# BIO conversion
-# ──────────────────────────────────────────────────────────────────────────────
-
-def to_bio(labels: list[str]) -> list[str]:
-    """
-    Convert flat labels ["INSTRUCTION","INSTRUCTION","CONTENT",...] to BIO.
-    "OTHER" → "O"
-    Consecutive same labels get B- for first token, I- for the rest.
-    """
-    bio = []
-    prev = None
-    for label in labels:
-        if label == "OTHER":
-            bio.append("O")
-            prev = None
-        elif label != prev:
-            bio.append(f"B-{label}")
-            prev = label
-        else:
-            bio.append(f"I-{label}")
-    return bio
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 # LayoutLMv3 limits
@@ -133,8 +104,7 @@ def load_json(path: Path, drop_other: bool = False) -> list[dict]:
         tokens, bboxes, raw_labels = zip(*filtered)
         tokens, bboxes, raw_labels = list(tokens), list(bboxes), list(raw_labels)
 
-    bio_labels = to_bio(raw_labels)
-    label_ids  = [LABEL2ID[l] for l in bio_labels]
+    label_ids  = [LABEL2ID[l] for l in raw_labels]
 
     chunks = chunk_page(tokens, bboxes, label_ids)
 
