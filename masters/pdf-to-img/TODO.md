@@ -104,3 +104,5 @@ Pro Tip: Don't just set it and forget it—monitor your F1-score for the "Instru
 
 ```single page PDF -> OCR -> Model Inference -> Label Aggregation -> Excalidraw JSON```
    - Functions should be called instead of separate scripts.
+2. Prepare module to convert predicted blocks into Excalidraw JSON format, example is provided in `sample_json.excalidraw`.
+3. Test the entire pipeline and import resulting Excalidraw json to Excalidraw platform to verify the correct integration.
