@@ -143,7 +143,7 @@ def process_task(task: dict, threshold: float) -> dict | None:
         return None
 
     data = task.get("data", {})
-    tokens  = data.get("tokens", [])
+    tokens  = [str(t) for t in data.get("tokens", [])]
     bboxes  = data.get("bboxes", [])
     img_size = data.get("image_size", {})
     img_w   = img_size.get("width",  1)
@@ -158,9 +158,11 @@ def process_task(task: dict, threshold: float) -> dict | None:
 
     labels = assign_labels(tokens, bboxes, blocks, threshold=threshold)
 
+    image_path = data.get("image_path", "")
+    image_path = "/content/dataset/images/" + Path(image_path.replace("\\", "/")).parts[-1]
     return {
         "task_id":    task.get("id"),
-        "image_path": data.get("image_path", ""),
+        "image_path": image_path,
         "image_size": img_size,
         "tokens":     tokens,
         "bboxes":     bboxes,

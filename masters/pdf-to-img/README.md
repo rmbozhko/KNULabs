@@ -14,4 +14,6 @@
 
 8. Build HF dataset: `python build_dataset.py --input dataset/Focus_3_-_Student_book_-_2020/labeled --output dataset/Focus_3_-_Student_book_-_2020/hf_dataset`
 
+9. Copy the `hf_dataset` folder to `/content/drive/MyDrive/layoutlmv3/dataset/hf_dataset`.
 
+10. Make sure that dataset images are also uploaded to `/content/drive/MyDrive/layoutlmv3/dataset/Focus_3_-_Student_book_-_2020/images`. Make sure that the image paths in the dataset point to the correct location in Colab workspace. We copy images and HF dataset to Colab workspace and point to them from the dataset because LayoutLMv3's image processor expects local paths, not Google Drive paths.

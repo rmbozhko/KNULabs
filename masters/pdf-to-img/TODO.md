@@ -91,10 +91,15 @@ Pro Tip: Don't just set it and forget it—monitor your F1-score for the "Instru
 
 # Phase 2: The Fine-Tuning Loop
 1. Make sure token training loop is set up correctly:
-- Make sure that model can work with images.
+- Make sure that model can work with **images** and tokens.
 - Config: Set your id2label and label2id mapping (e.g., {0: "INSTRUCTION", 1: "CONTENT", 2: "OTHER"}).
-- Hyperparameters: Start with a low learning rate (e.g., $2e–5$). If you go higher, you will erase the pre-trained weights, and the model will fail to converge.
-- Weighted Loss: Apply that CrossEntropyLoss with weights we discussed earlier to handle your CONTENT vs. INSTRUCTION imbalance. Should I take OTHER into account?
+- Weighted Loss: Apply that CrossEntropyLoss with weights we discussed earlier to handle your CONTENT vs. INSTRUCTION imbalance.
+```import json, torch, torch.nn as nn
+  cw = json.load(open('dataset\Focus_3_-_Student_book_-_2020\hf_dataset/class_weights.json'))
+  n  = 3  # num_labels
+  w  = torch.tensor([cw['class_weights_by_id'][str(i)] for i in range(n)])
+  loss_fn = nn.CrossEntropyLoss(weight=w)```
+
 ## Testing:
 1. The model will predict labels for every token. Write a script that iterates through the predictions and groups tokens with the same label if their bounding boxes are adjacent (the "Proximity Threshold" logic). -> derive block-level predictions from token-level predictions. Should I have a separate script for that or do it in the baseline notebook?
 2. Write a function to debug the output of your model by visualizing the predicted labels on the original image. This will help you see if the model is correctly identifying instructions vs. content.
