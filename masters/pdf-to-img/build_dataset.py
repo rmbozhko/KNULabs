@@ -36,7 +36,7 @@ import json
 import math
 import random
 import sys
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path
 
 try:
@@ -250,11 +250,6 @@ def build_hf_dataset(samples: list[dict]) -> Dataset:
         "bboxes":      Sequence(Sequence(Value("int32"))),
         "label_ids":   Sequence(Value("int32")),
     })
-    print(samples[1]["id"])
-    print(samples[0]["image_path"])
-    print(samples[0]["tokens"][:10])
-    print("bboxes:", samples[0]["bboxes"][:10])
-    print("label_ids:", samples[0]["label_ids"][:10])
     flat = {key: [s[key] for s in samples] for key in samples[0]}
     return Dataset.from_dict(flat, features=features)
 
@@ -270,10 +265,13 @@ def three_way_split(
     seed: int,
 ) -> tuple[list[dict], list[dict], list[dict]]:
     """
-    Shuffle and split *samples* into train / val / test.
+    Shuffle and split *samples* into train / val / test by page id.
 
-    Both val_frac and test_frac are fractions of the *total* dataset.
-    train_frac is implicitly  1 - val_frac - test_frac.
+    All chunks from the same page are kept in exactly one split to avoid
+    leakage across train/val/test.
+
+    Both val_frac and test_frac are fractions of the *page count*.
+    train_frac is implicitly 1 - val_frac - test_frac.
 
     Raises ValueError if fractions are invalid.
     """
@@ -284,25 +282,72 @@ def three_way_split(
             f"val_split ({val_frac}) + test_split ({test_frac}) must be < 1.0"
         )
 
-    random.seed(seed)
-    random.shuffle(samples)
+    # Group chunks by page stem, e.g. "page_004_labeled_chunk1" -> "page_004_labeled"
+    page_to_samples: dict[str, list[dict]] = defaultdict(list)
+    for sample in samples:
+        sample_id = sample["id"]
+        page_id = sample_id.rsplit("_chunk", 1)[0]
+        page_to_samples[page_id].append(sample)
 
-    n = len(samples)
-    n_val  = max(1, math.floor(n * val_frac))  if val_frac  > 0 else 0
-    n_test = max(1, math.floor(n * test_frac)) if test_frac > 0 else 0
-    n_train = n - n_val - n_test
+    page_ids = list(page_to_samples.keys())
+    random.seed(seed)
+    random.shuffle(page_ids)
+
+    n_pages = len(page_ids)
+    n_val  = max(1, math.floor(n_pages * val_frac))  if val_frac  > 0 else 0
+    n_test = max(1, math.floor(n_pages * test_frac)) if test_frac > 0 else 0
+    n_train = n_pages - n_val - n_test
 
     if n_train < 1:
         raise ValueError(
-            f"Not enough samples ({n}) for the requested splits "
+            f"Not enough pages ({n_pages}) for the requested splits "
             f"(val={n_val}, test={n_test})."
         )
 
-    train = samples[:n_train]
-    val   = samples[n_train : n_train + n_val]
-    test  = samples[n_train + n_val :]
+    train_page_ids = page_ids[:n_train]
+    val_page_ids = page_ids[n_train : n_train + n_val]
+    test_page_ids = page_ids[n_train + n_val :]
+
+    train = [s for pid in train_page_ids for s in page_to_samples[pid]]
+    val = [s for pid in val_page_ids for s in page_to_samples[pid]]
+    test = [s for pid in test_page_ids for s in page_to_samples[pid]]
 
     return train, val, test
+
+
+def assert_no_page_leakage(
+    train_samples: list[dict],
+    val_samples: list[dict],
+    test_samples: list[dict],
+) -> None:
+    """
+    Ensure each page appears in at most one split.
+    Raises ValueError with overlap details if leakage is detected.
+    """
+    def pages_of(samples: list[dict]) -> set[str]:
+        return {s["id"].rsplit("_chunk", 1)[0] for s in samples}
+
+    train_pages = pages_of(train_samples)
+    val_pages = pages_of(val_samples)
+    test_pages = pages_of(test_samples)
+
+    overlaps = {
+        "train∩val": train_pages & val_pages,
+        "train∩test": train_pages & test_pages,
+        "val∩test": val_pages & test_pages,
+    }
+
+    leaking_pairs = {
+        pair: sorted(list(pages))
+        for pair, pages in overlaps.items()
+        if pages
+    }
+    if leaking_pairs:
+        details = "; ".join(
+            f"{pair}: {pages[:5]}{'...' if len(pages) > 5 else ''}"
+            for pair, pages in leaking_pairs.items()
+        )
+        raise ValueError(f"Page leakage detected across splits: {details}")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -316,8 +361,8 @@ def main():
     )
     parser.add_argument("--input",       default="dataset/labeled",    help="Folder with *_labeled.json files")
     parser.add_argument("--output",      default="dataset/hf_dataset", help="Output folder")
-    parser.add_argument("--val-split",   type=float, default=0.15,     help="Fraction of total data for validation set")
-    parser.add_argument("--test-split",  type=float, default=0.10,     help="Fraction of total data for test set (0 = no test split)")
+    parser.add_argument("--val-split",   type=float, default=0.15,     help="Fraction of pages for validation set")
+    parser.add_argument("--test-split",  type=float, default=0.10,     help="Fraction of pages for test set (0 = no test split)")
     parser.add_argument("--seed",        type=int,   default=42,       help="Random seed for reproducible splits")
     parser.add_argument("--drop-other",  action="store_true",          help="Remove OTHER tokens from dataset")
     parser.add_argument("--strict",      action="store_true",          help="Abort on any validation error instead of just warning")
@@ -377,6 +422,7 @@ def main():
             test_frac=args.test_split,
             seed=args.seed,
         )
+        assert_no_page_leakage(train_samples, val_samples, test_samples)
     except ValueError as e:
         print(f"Error: {e}")
         sys.exit(1)
