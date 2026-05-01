@@ -55,7 +55,6 @@ except ImportError:
 LABELS = [
     "INSTRUCTION",
     "CONTENT",
-    "OTHER",
 ]
 
 LABEL2ID = {l: i for i, l in enumerate(LABELS)}
@@ -209,17 +208,10 @@ def load_json(path: Path, drop_other: bool = False) -> list[dict]:
     raw_labels = data["labels"]
     image_path = data.get("image_path", "")
 
-    # Optionally remove OTHER tokens entirely
-    if drop_other:
-        filtered = [
-            (t, b, l)
-            for t, b, l in zip(tokens, bboxes, raw_labels)
-            if l != "OTHER"
-        ]
-        if not filtered:
-            return []
-        tokens, bboxes, raw_labels = zip(*filtered)
-        tokens, bboxes, raw_labels = list(tokens), list(bboxes), list(raw_labels)
+    # Merge OTHER into CONTENT (user requested merging OTHER → CONTENT)
+    # If the user previously used --drop-other, that flag is now ignored
+    # because OTHER tokens are assimilated into CONTENT.
+    raw_labels = ["CONTENT" if (isinstance(l, str) and l == "OTHER") else l for l in raw_labels]
 
     label_ids = [LABEL2ID[l] for l in raw_labels]
 
@@ -364,7 +356,7 @@ def main():
     parser.add_argument("--val-split",   type=float, default=0.15,     help="Fraction of pages for validation set")
     parser.add_argument("--test-split",  type=float, default=0.10,     help="Fraction of pages for test set (0 = no test split)")
     parser.add_argument("--seed",        type=int,   default=42,       help="Random seed for reproducible splits")
-    parser.add_argument("--drop-other",  action="store_true",          help="Remove OTHER tokens from dataset")
+    parser.add_argument("--drop-other",  action="store_true",          help="(ignored) OTHER tokens are merged into CONTENT")
     parser.add_argument("--strict",      action="store_true",          help="Abort on any validation error instead of just warning")
     args = parser.parse_args()
 
