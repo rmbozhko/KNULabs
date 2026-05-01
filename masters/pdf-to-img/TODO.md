@@ -100,14 +100,41 @@ Pro Tip: Don't just set it and forget it—monitor your F1-score for the "Instru
   w  = torch.tensor([cw['class_weights_by_id'][str(i)] for i in range(n)])
   loss_fn = nn.CrossEntropyLoss(weight=w)```
 
+### Dataset Preparation:
+- Review the weights calculation.
+
+### Training
+- I need to add some metrics and graphs for training stage (CPU/GPU usage, loss curves, F1-score for each class) to monitor the training process better.
+- Learning Rate Schedulers: Use a Linear Warmup scheduler. This prevents the model from "jolting" its weights at the start of training and preserves the pre-trained visual knowledge. -> https://gemini.google.com/app/0762b47769ee40ed
+
 ## Testing:
-1. The model will predict labels for every token. Write a script that iterates through the predictions and groups tokens with the same label if their bounding boxes are adjacent (the "Proximity Threshold" logic). -> derive block-level predictions from token-level predictions. Should I have a separate script for that or do it in the baseline notebook?
-2. Write a function to debug the output of your model by visualizing the predicted labels on the original image. This will help you see if the model is correctly identifying instructions vs. content.
+- Plot, charts, confusion matrix, as many as possible
+
+### Post-processing
+1. Majority Voting (The "Block-Level" Fix)
+- Group your tokens into physical lines or paragraphs first (using your OCR coordinates).
+- For each group, take the mode (most frequent label) of the tokens within that group.
+- If a block is 80% "INSTRUCTION" and 20% "CONTENT", force the entire block to "INSTRUCTION."
+2. (Alternative to Majority Voting) Viterbi Decoding / CRF (Conditional Random Fields)
+- Standard token classification models (like your current one) assume every token is independent. That's why you get [INSTRUCTION, CONTENT, INSTRUCTION].
+A CRF layer on top of your model forces it to learn transition probabilities. It learns that an INSTRUCTION is highly likely to be followed by another INSTRUCTION, and highly unlikely to be followed by a CONTENT block without a transition.
+- Action: If you aren't using a CRF head on your model, consider adding one. It is the industry standard for fixing "jittery" NER outputs.
+3. Heuristic Filtering (The "Domain Knowledge" Layer)
+- You are an English teacher. You know the textbook better than the model. Use your knowledge to enforce rules that the model is too "dumb" to learn:
+- The "Keyword" Rule: If a block is predicted as "CONTENT" but contains the word "Listen," "Look," or "Exercise," the system must override it to "INSTRUCTION."
+- The "Short Block" Rule: If a block is only 2-3 words long, it is statistically more likely to be a header or instruction than a paragraph of content.
+4. Write a function to debug the output of your model by visualizing the predicted labels on the original image. This will help you see if the model is correctly identifying instructions vs. content.
 
 # Phase 3: The Inference & Integration Script
 1. Convert separate scripts into a unified pipeline:
-
 ```single page PDF -> OCR -> Model Inference -> Label Aggregation -> Excalidraw JSON```
    - Functions should be called instead of separate scripts.
 2. Prepare module to convert predicted blocks into Excalidraw JSON format, example is provided in `sample_json.excalidraw`.
 3. Test the entire pipeline and import resulting Excalidraw json to Excalidraw platform to verify the correct integration.
+
+# Current TODO
+0. Drop "OTHER" class and re-train model and run test with Majority Voting
+1. Learning Rate Schedulers: https://gemini.google.com/app/0762b47769ee40ed
+2. Reduce Variance with Probability Threshold (baseline notebook history) + Majority Voting
+3. Viterbi Decoding / CRF
+4. Heuristic Filtering (The "Domain Knowledge" Layer)
