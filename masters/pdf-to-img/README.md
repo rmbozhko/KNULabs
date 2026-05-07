@@ -17,3 +17,16 @@
 9. Copy the `hf_dataset` folder to `/content/drive/MyDrive/layoutlmv3/dataset/hf_dataset`.
 
 10. Make sure that dataset images are also uploaded to `/content/drive/MyDrive/layoutlmv3/dataset/Focus_3_-_Student_book_-_2020/images`. Make sure that the image paths in the dataset point to the correct location in Colab workspace. We copy images and HF dataset to Colab workspace and point to them from the dataset because LayoutLMv3's image processor expects local paths, not Google Drive paths.
+
+11. Train the model in Colab. Make sure to set the correct paths to the dataset and images in your training script.
+12. Evaluate the model and save predictions in a CSV file with the following format:
+```image_path, token, x, y, w, h, predicted_label
+/path/to/image.png, "Question", 100, 200, 50, 20, INSTRUCTION
+/path/to/image.png, "Answer", 150, 250, 50, 20, CONTENT
+``` 
+
+13. python merged_token_blocks.py
+
+14. python heuristic_filter.py merged_blocks.csv -o filtered_blocks.csv
+
+15. python visualize_predictions.py --images .\dataset\Focus_3_-_Student_book_-_2020\images --csv filtered_blocks.csv
