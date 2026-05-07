@@ -133,8 +133,24 @@ A CRF layer on top of your model forces it to learn transition probabilities. It
 3. Test the entire pipeline and import resulting Excalidraw json to Excalidraw platform to verify the correct integration.
 
 # Current TODO
-0. Drop "OTHER" class and re-train model and run test with Majority Voting
-1. Learning Rate Schedulers: https://gemini.google.com/app/0762b47769ee40ed
-2. Reduce Variance with Probability Threshold (baseline notebook history) + Majority Voting
-3. Viterbi Decoding / CRF
-4. Heuristic Filtering (The "Domain Knowledge" Layer)
+✅ - Drop "OTHER" class and re-train model and run test with Majority Voting 
+✅ - Learning Rate Schedulers: https://gemini.google.com/app/0762b47769ee40ed
+✅ - Reduce Variance with Probability Threshold (baseline notebook history) + Majority Voting
+- Viterbi Decoding / CRF
+    - chat about lower f1-score than without CRF
+- Merge tokens into blocks (check if blocks are organized correctly
+    - maybe add some vertical and horizontal padding)
+- Heuristic Filtering (The "Domain Knowledge" Layer)
+    - it would be great to include ACTUAL label from baseline notebook to compare with model output and see how many blocks are corrected by heuristics
+- Debugging function to visualize predicted labels on the original image
+✅- Figure out how to convert PNG for model inference
+✅- Figure out how to map model output to dict the Excalidraw module expects
+
+- perform a "Salience Map" check. Use a tool like Captum to see which pixels the model is actually looking at when it predicts INSTRUCTION. If it's looking at random white space or the middle of a paragraph instead of the bold headers or icons in the Focus 3 book, your problem is 100% spatial normalization or data quality.
+- make weights more aggressive: INSTRUCTION: [3.0, 4.0], CONTENT: [0.5, 1.0]
+- increase size of dataset
+- Data Augmentation: Since you only have 50 pages, you need to "hallucinate" more. Apply random rotations (1-2 degrees), slight scaling, and brightness shifts to your training images. This forces the model to rely on structural features rather than fixed pixel locations.
+
+- it makes sense to combine multiple CONTENT blocks into a single one if they are not separated by an INSTRUCTION block. The multiple INSTRUCTION blocks can be merged only if their proximity is less than a certain threshold. This will help to reduce the number of blocks and make the Excalidraw output cleaner.
+- replace labels with tokens
+- add LLM support
