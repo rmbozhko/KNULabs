@@ -150,7 +150,22 @@ A CRF layer on top of your model forces it to learn transition probabilities. It
 - make weights more aggressive: INSTRUCTION: [3.0, 4.0], CONTENT: [0.5, 1.0]
 - increase size of dataset
 - Data Augmentation: Since you only have 50 pages, you need to "hallucinate" more. Apply random rotations (1-2 degrees), slight scaling, and brightness shifts to your training images. This forces the model to rely on structural features rather than fixed pixel locations.
+- in baseline comparison notebook tokens disappear in `eval_split` although in `ds` they are still present. Can LayoutLMv3's image processor be the culprit? Does it drop tokens that are outside of a certain area of the image? Check if tokens are still present after the image processor step and before being fed into the model.
 
-- it makes sense to combine multiple CONTENT blocks into a single one if they are not separated by an INSTRUCTION block. The multiple INSTRUCTION blocks can be merged only if their proximity is less than a certain threshold. This will help to reduce the number of blocks and make the Excalidraw output cleaner.
-- replace labels with tokens
-- add LLM support
+✅- it makes sense to combine multiple CONTENT blocks into a single one if they are not separated by an INSTRUCTION block. The multiple INSTRUCTION blocks can be merged only if their proximity is less than a certain threshold. This will help to reduce the number of blocks and make the Excalidraw output cleaner.
+✅- replace labels with tokens
+
+✅- add boolean variable to work as a toggle to enable or disable usage of Gemini LLM for post-processing of model output. Instead of locating blocks with instructions and content in order as on image, we can feed the model output to Gemini and ask it to rearrange blocks in the correct linear order based on the content of the blocks (omitting blocks overlaying on each other) as well as complete the sentences with missing tokens. This will be especially useful for cases when the layout of the page is complex and blocks are not arranged in a linear way. I have been using the following LLM:
+model = "gemini-3-flash-preview"
+
+response = client.models.generate_content(
+    model=model,
+    config=types.GenerateContentConfig(
+        system_instruction="You are a cat. Your name is Neko."),
+    contents="Explain how AI works in a few words"
+)
+print(response.text)
+I suppose we should change the system instruction to something like "You are an assistant that helps to rearrange blocks of text extracted from a textbook page. Your task is to take the output of a token classification model, which consists of blocks labeled as INSTRUCTION or CONTENT, and rearrange them in the correct linear order as they would appear on the page. You should also complete any sentences that are missing tokens based on the context of the blocks. The input will be a list of blocks with their labels and content, and you should output a rearranged list of blocks in the correct order." and also provide an example of the input and expected output in the system instruction to make it clearer for the model.
+
+
+

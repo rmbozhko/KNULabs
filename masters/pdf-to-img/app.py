@@ -52,7 +52,7 @@ INSTRUCTION_MERGE_Y_GAP    = 30     # max vertical gap (0-1000 units) between tw
 # ── Stage 5 — Gemini reordering (toggle here, no UI exposure) ────────────────
 ENABLE_GEMINI_REORDER = False        # set True to activate stage 5
 GEMINI_MODEL          = "gemini-3-flash-preview"
-GEMINI_API_KEY        = "AIzaSyBji324HvswvlwgwKrWUzwrKefNngBKO2w"
+GEMINI_API_KEY        = ""
 
 # ── Excalidraw visual config ───────────────────────────────────────────────────
 LABEL_COLOR = {
