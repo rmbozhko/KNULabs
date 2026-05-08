@@ -49,12 +49,30 @@ INSTRUCTION_MERGE_Y_GAP    = 30     # max vertical gap (0-1000 units) between tw
                                     # adjacent INSTRUCTION blocks to merge them;
                                     # CONTENT blocks are always merged when not
                                     # separated by an INSTRUCTION block
+# ── Stage 5 — Gemini reordering (toggle here, no UI exposure) ────────────────
+ENABLE_GEMINI_REORDER = False        # set True to activate stage 5
+GEMINI_MODEL          = "gemini-3-flash-preview"
+GEMINI_API_KEY        = "AIzaSyBji324HvswvlwgwKrWUzwrKefNngBKO2w"
+
 # ── Excalidraw visual config ───────────────────────────────────────────────────
 LABEL_COLOR = {
     "INSTRUCTION": "#ffc9c9",   # pink  (matches your sample .excalidraw)
     "CONTENT":     "#b2f2bb",   # green (matches your sample .excalidraw)
 }
 DEFAULT_COLOR = "#eeeeee"
+
+# ── Excalidraw canvas layout ───────────────────────────────────────────────────
+# Blocks are stacked top-to-bottom in a single column; spatial bbox coordinates
+# from the model are ignored so blocks never overlap.
+CANVAS_X         = 100    # fixed left edge for every block (canvas units)
+CANVAS_Y_START   = 100    # y position of the first block
+CANVAS_WIDTH     = 800    # fixed width for every block
+BLOCK_MIN_HEIGHT = 40     # minimum block height (canvas units)
+BLOCK_MARGIN     = 16     # vertical gap between consecutive blocks
+FONT_SIZE        = 14
+LINE_HEIGHT      = 1.25
+CHARS_PER_LINE   = 90     # approx characters per line at CANVAS_WIDTH & FONT_SIZE
+                           # used to estimate block height from token text length
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -603,13 +621,24 @@ def _apply_heuristics(blocks: list[dict], image_rgb) -> list[dict]:
 # ─────────────────────────────────────────────────────────────────────────────
 # Excalidraw element builder
 # ─────────────────────────────────────────────────────────────────────────────
-def _make_excalidraw_elements(block: dict, index: int) -> list[dict]:
-    """Convert one filtered block into an Excalidraw rectangle + text element pair.
+def _estimate_height(text: str, block_width: int = CANVAS_WIDTH,
+                     font_size: int = FONT_SIZE, line_height: float = LINE_HEIGHT,
+                     padding: int = 8, chars_per_line: int = CHARS_PER_LINE) -> int:
+    """Estimate block height from character count so text fits without clipping."""
+    import math
+    n_lines  = max(1, math.ceil(len(text) / chars_per_line))
+    px_per_line = font_size * line_height
+    return max(BLOCK_MIN_HEIGHT, int(n_lines * px_per_line + padding * 2))
 
-    The rectangle is coloured by label; the text element shows the merged token
-    string so the actual textbook content is visible inside each block.
-    The text element width matches the rectangle so Excalidraw wraps the text
-    naturally, and autoResize is disabled to preserve the box dimensions.
+
+def _make_excalidraw_elements(block: dict, index: int,
+                              canvas_x: float, canvas_y: float,
+                              canvas_w: float) -> list[dict]:
+    """Convert one block into an Excalidraw rectangle + text element pair.
+
+    Spatial coordinates (block x/y/width/height from the model) are ignored.
+    Position and width come from the fixed canvas layout constants so blocks
+    are stacked in a clean single column with no overlaps.
     """
     rect_id     = str(uuid.uuid4())[:21]
     text_id     = str(uuid.uuid4())[:21]
@@ -617,17 +646,16 @@ def _make_excalidraw_elements(block: dict, index: int) -> list[dict]:
     color       = LABEL_COLOR.get(final_label, DEFAULT_COLOR)
     ts          = int(time.time() * 1000)
     content     = block["tokens"]
-    padding     = 8          # horizontal inset so text does not touch the border
-    font_size   = 14
-    line_height = 1.25
-    text_w      = max(block["width"] - padding * 2, 40)
+    padding     = 8
+    text_w      = max(canvas_w - padding * 2, 40)
+    height      = _estimate_height(content, canvas_w)
 
     def seed(): return int(uuid.uuid4().int % 2**31)
 
     rect = {
         "id": rect_id, "type": "rectangle",
-        "x": block["x"], "y": block["y"],
-        "width": block["width"], "height": block["height"],
+        "x": canvas_x, "y": canvas_y,
+        "width": canvas_w, "height": height,
         "angle": 0,
         "strokeColor": "#1e1e1e", "backgroundColor": color,
         "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid",
@@ -643,9 +671,9 @@ def _make_excalidraw_elements(block: dict, index: int) -> list[dict]:
 
     text = {
         "id": text_id, "type": "text",
-        "x": block["x"] + padding,
-        "y": block["y"] + padding,
-        "width": text_w, "height": block["height"] - padding * 2,
+        "x": canvas_x + padding,
+        "y": canvas_y + padding,
+        "width": text_w, "height": height - padding * 2,
         "angle": 0,
         "strokeColor": "#1e1e1e", "backgroundColor": color,
         "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid",
@@ -656,12 +684,12 @@ def _make_excalidraw_elements(block: dict, index: int) -> list[dict]:
         "seed": seed(), "version": 1, "versionNonce": seed(),
         "isDeleted": False, "boundElements": None,
         "updated": ts, "link": None, "locked": False,
-        "text": content, "fontSize": font_size, "fontFamily": 5,
+        "text": content, "fontSize": FONT_SIZE, "fontFamily": 5,
         "textAlign": "left", "verticalAlign": "top",
         "containerId": rect_id,
-        "originalText": content, "autoResize": False, "lineHeight": line_height,
+        "originalText": content, "autoResize": False, "lineHeight": LINE_HEIGHT,
     }
-    return [rect, text]
+    return [rect, text], height
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -780,11 +808,150 @@ def postprocess(model_output: dict) -> list[dict]:
     if ENABLE_BLOCK_CONSOLIDATION:
         blocks = _consolidate_blocks(blocks)
 
-    # Build Excalidraw elements
-    elements = []
+    # Stage 5 — Gemini reordering (optional)
+    if ENABLE_GEMINI_REORDER:
+        blocks = _gemini_reorder(blocks)
+
+    # Build Excalidraw elements — stacked single column, no spatial coords used
+    elements  = []
+    y_cursor  = CANVAS_Y_START
     for i, block in enumerate(blocks):
-        elements.extend(_make_excalidraw_elements(block, i))
+        elems, height = _make_excalidraw_elements(
+            block, i,
+            canvas_x=CANVAS_X,
+            canvas_y=y_cursor,
+            canvas_w=CANVAS_WIDTH,
+        )
+        elements.extend(elems)
+        y_cursor += height + BLOCK_MARGIN
     return elements
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  Stage 5 — Gemini reordering  (controlled by ENABLE_GEMINI_REORDER)
+# ══════════════════════════════════════════════════════════════════════════════
+
+_GEMINI_SYSTEM_PROMPT = """You are an assistant that processes blocks of text extracted from ESL textbook pages.
+A token classification model has labelled each block as either INSTRUCTION or CONTENT
+and provided its bounding box on the page. Your two tasks are:
+
+1. REORDER — arrange the blocks in the correct top-to-bottom, left-to-right reading
+   order a student would follow, taking the bounding-box positions as a guide but
+   overriding the spatial order whenever the semantic flow clearly requires it.
+   Discard any block that obviously overlaps another (i.e. both bounding boxes share
+   more than 50 % of their area) — keep only the more informative one.
+
+2. COMPLETE — if a block's text is clearly a fragment of a sentence cut off by the
+   OCR or the block boundary, extend it with the most plausible missing tokens so
+   that it forms a complete, grammatically correct phrase. Do not invent new
+   instructions or content — only fill obvious gaps.
+
+Input format — a JSON array of objects:
+[
+  {
+    "id": 0,
+    "label": "INSTRUCTION",
+    "tokens": "Listen and answer the questions",
+    "bbox": [x_min, y_min, x_max, y_max]
+  },
+  ...
+]
+
+Output format — return ONLY a valid JSON array with the same fields, reordered and
+completed. Do not include any explanation, markdown fences, or extra keys.
+
+Example input:
+[
+  {"id":0,"label":"CONTENT","tokens":"Paris is the capital","bbox":[50,400,400,420]},
+  {"id":1,"label":"INSTRUCTION","tokens":"Read the text and answer","bbox":[50,50,500,70]},
+  {"id":2,"label":"CONTENT","tokens":"of France.","bbox":[50,420,200,440]}
+]
+
+Example output:
+[
+  {"id":1,"label":"INSTRUCTION","tokens":"Read the text and answer the questions below.","bbox":[50,50,500,70]},
+  {"id":0,"label":"CONTENT","tokens":"Paris is the capital of France.","bbox":[50,400,400,440]},
+  {"id":2,"label":"CONTENT","tokens":"of France.","bbox":[50,420,200,440]}
+]
+Note: block 2 was merged into block 0 because it is a direct continuation; block 1
+was moved to the top because it is the instruction that precedes the content.
+"""
+
+
+def _gemini_reorder(blocks: list[dict]) -> list[dict]:
+    """
+    Send the consolidated blocks to Gemini, ask it to reorder and complete them,
+    and return the updated list.  Falls back to the original order on any error.
+    """
+    import os, json as _json
+    try:
+        from google import genai
+        from google.genai import types
+    except ImportError:
+        st.warning(
+            "Stage 5 (Gemini reorder) is enabled but `google-genai` is not installed. "
+            "Run `pip install google-genai` and restart the app."
+        )
+        return blocks
+
+    api_key = GEMINI_API_KEY or os.environ.get("GOOGLE_API_KEY", "")
+    if not api_key:
+        st.warning(
+            "Stage 5 (Gemini reorder) is enabled but no API key was found. "
+            "Set GEMINI_API_KEY in app.py or export GOOGLE_API_KEY in your shell."
+        )
+        return blocks
+
+    # Build a compact, serialisable representation of each block
+    payload = [
+        {
+            "id":     i,
+            "label":  b["final_label"],
+            "tokens": b["tokens"],
+            "bbox":   [
+                round(b["x_min"]), round(b["y_min"]),
+                round(b["x_max"]), round(b["y_max"]),
+            ],
+        }
+        for i, b in enumerate(blocks)
+    ]
+
+    try:
+        client   = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            config=types.GenerateContentConfig(
+                system_instruction=_GEMINI_SYSTEM_PROMPT,
+            ),
+            contents=_json.dumps(payload, ensure_ascii=False),
+        )
+        raw = response.text.strip()
+
+        # Strip accidental markdown fences
+        if raw.startswith("```"):
+            raw = re.sub(r"^```[^\n]*\n?", "", raw)
+            raw = re.sub(r"\n?```$", "", raw)
+
+        reordered = _json.loads(raw)
+
+        # Reconstruct full block dicts preserving all geometry keys from the
+        # original blocks, but updating tokens and final_label from Gemini output
+        id_to_block = {i: dict(b) for i, b in enumerate(blocks)}
+        result = []
+        for item in reordered:
+            orig_id = item.get("id")
+            if orig_id is None or orig_id not in id_to_block:
+                continue
+            b = id_to_block[orig_id]
+            b["tokens"]      = item.get("tokens", b["tokens"])
+            b["final_label"] = item.get("label",  b["final_label"])
+            result.append(b)
+
+        return result if result else blocks
+
+    except Exception as exc:
+        st.warning(f"Stage 5 (Gemini reorder) failed, keeping original order: {exc}")
+        return blocks
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -843,11 +1010,11 @@ if uploaded_file is not None:
     image = Image.open(uploaded_file)
 
     with st.expander("Preview", expanded=True):
-        st.image(image, width='stretch')
+        st.image(image, use_container_width=True)
 
     st.divider()
 
-    if st.button("▶ Generate Excalidraw diagram", type="primary", width='stretch'):
+    if st.button("▶ Generate Excalidraw diagram", type="primary", use_container_width=True):
         try:
             with st.status("Processing…", expanded=True) as status:
                 st.write("🔍 Running OCR and cleaning tokens…")
@@ -877,7 +1044,7 @@ if uploaded_file is not None:
                 file_name=filename,
                 mime="application/json",
                 type="primary",
-                width='stretch',
+                use_container_width=True,
             )
 
         except FileNotFoundError as e:
