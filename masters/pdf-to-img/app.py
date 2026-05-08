@@ -42,6 +42,13 @@ CONFIDENCE_THRESHOLD    = 0.70         # softmax threshold (from your notebook)
 MV_LINE_Y_TOLERANCE     = 10.0        # majority-voting y-grouping tolerance (0-1000 scale)
 MV_MAJORITY_THRESHOLD   = 0.80        # majority-voting dominance threshold
 
+
+# u2500u2500 Stage 4 u2014 block consolidation (toggle here, no UI exposure) u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500
+ENABLE_BLOCK_CONSOLIDATION = True   # set False to skip stage 4 entirely
+INSTRUCTION_MERGE_Y_GAP    = 30     # max vertical gap (0-1000 units) between two
+                                    # adjacent INSTRUCTION blocks to merge them;
+                                    # CONTENT blocks are always merged when not
+                                    # separated by an INSTRUCTION block
 # ── Excalidraw visual config ───────────────────────────────────────────────────
 LABEL_COLOR = {
     "INSTRUCTION": "#ffc9c9",   # pink  (matches your sample .excalidraw)
@@ -646,20 +653,99 @@ def _make_excalidraw_elements(block: dict, index: int) -> list[dict]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# postprocess() — orchestrates all three stages
+# Stage 4 — block consolidation  (controlled by ENABLE_BLOCK_CONSOLIDATION)
+# ─────────────────────────────────────────────────────────────────────────────
+def _consolidate_blocks(
+    blocks: list[dict],
+    instruction_y_gap: float = INSTRUCTION_MERGE_Y_GAP,
+) -> list[dict]:
+    """
+    Reduces the number of Excalidraw blocks by applying two rules in a single
+    pass over the list (which is already in top-to-bottom reading order):
+
+    CONTENT rule — unconditional greedy merge:
+        Consecutive CONTENT blocks are always merged into one, regardless of
+        the vertical gap between them.  The run is broken only when an
+        INSTRUCTION block appears between them.
+
+    INSTRUCTION rule — proximity-gated merge:
+        Consecutive INSTRUCTION blocks are merged only when the vertical gap
+        between the bottom edge of the previous block and the top edge of the
+        next block is <= instruction_y_gap (in 0-1000 normalised units).
+        A larger gap means a visible separator on the page (e.g. a content
+        paragraph in between that the model labelled INSTRUCTION), so they
+        are kept separate.
+
+    Merged blocks get a bounding box that is the union of their members and
+    their token strings are joined with a space.
+    """
+
+    def _merge_run(run: list[dict]) -> dict:
+        """Union-bbox merge of a non-empty list of blocks."""
+        merged = dict(run[0])
+        merged["tokens"]  = " ".join(b["tokens"] for b in run)
+        merged["x_min"]   = min(b["x_min"]  for b in run)
+        merged["y_min"]   = min(b["y_min"]  for b in run)
+        merged["x_max"]   = max(b["x_max"]  for b in run)
+        merged["y_max"]   = max(b["y_max"]  for b in run)
+        merged["x"]       = float(merged["x_min"])
+        merged["y"]       = float(merged["y_min"])
+        merged["width"]   = float(max(merged["x_max"] - merged["x_min"], 40))
+        merged["height"]  = float(max(merged["y_max"] - merged["y_min"] + 10, 20))
+        return merged
+
+    result: list[dict] = []
+    run:    list[dict] = []
+    run_label: str | None = None
+
+    for block in blocks:
+        label = block["final_label"]
+
+        if run_label is None:
+            run       = [block]
+            run_label = label
+
+        elif label == run_label == "CONTENT":
+            # CONTENT -> CONTENT: always extend the run
+            run.append(block)
+
+        elif label == run_label == "INSTRUCTION":
+            # INSTRUCTION -> INSTRUCTION: extend only if close enough
+            gap = block["y_min"] - run[-1]["y_max"]
+            if gap <= instruction_y_gap:
+                run.append(block)
+            else:
+                result.append(_merge_run(run))
+                run = [block]
+
+        else:
+            # Label changed — flush current run, start a new one
+            result.append(_merge_run(run))
+            run       = [block]
+            run_label = label
+
+    if run:
+        result.append(_merge_run(run))
+
+    return result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# postprocess() — orchestrates all four stages
 # ─────────────────────────────────────────────────────────────────────────────
 def postprocess(model_output: dict) -> list[dict]:
     """
     Stage 1 — majority voting      (baseline notebook)
     Stage 2 — block merging        (merge_token_blocks.py)
     Stage 3 — heuristic filtering  (heuristic_filter.py)
-    → Excalidraw element pairs
+    Stage 4 — block consolidation  (ENABLE_BLOCK_CONSOLIDATION flag)
+    -> Excalidraw element pairs
     """
     tokens    = model_output["tokens"]
     bboxes    = model_output["bboxes"]
     label_ids = model_output["label_ids"]
     id2label  = model_output["id2label"]
-    image_rgb = model_output.get("image")    # PIL Image carried through from preprocess
+    image_rgb = model_output.get("image")
 
     if not tokens:
         return []
@@ -677,6 +763,10 @@ def postprocess(model_output: dict) -> list[dict]:
     else:
         for b in blocks:
             b["final_label"] = b["label"]
+
+    # Stage 4 — block consolidation (optional)
+    if ENABLE_BLOCK_CONSOLIDATION:
+        blocks = _consolidate_blocks(blocks)
 
     # Build Excalidraw elements
     elements = []
