@@ -604,12 +604,24 @@ def _apply_heuristics(blocks: list[dict], image_rgb) -> list[dict]:
 # Excalidraw element builder
 # ─────────────────────────────────────────────────────────────────────────────
 def _make_excalidraw_elements(block: dict, index: int) -> list[dict]:
-    """Convert one filtered block into an Excalidraw rectangle + text label pair."""
-    rect_id    = str(uuid.uuid4())[:21]
-    text_id    = str(uuid.uuid4())[:21]
+    """Convert one filtered block into an Excalidraw rectangle + text element pair.
+
+    The rectangle is coloured by label; the text element shows the merged token
+    string so the actual textbook content is visible inside each block.
+    The text element width matches the rectangle so Excalidraw wraps the text
+    naturally, and autoResize is disabled to preserve the box dimensions.
+    """
+    rect_id     = str(uuid.uuid4())[:21]
+    text_id     = str(uuid.uuid4())[:21]
     final_label = block["final_label"]
     color       = LABEL_COLOR.get(final_label, DEFAULT_COLOR)
     ts          = int(time.time() * 1000)
+    content     = block["tokens"]
+    padding     = 8          # horizontal inset so text does not touch the border
+    font_size   = 14
+    line_height = 1.25
+    text_w      = max(block["width"] - padding * 2, 40)
+
     def seed(): return int(uuid.uuid4().int % 2**31)
 
     rect = {
@@ -629,12 +641,12 @@ def _make_excalidraw_elements(block: dict, index: int) -> list[dict]:
         "updated": ts, "link": None, "locked": False,
     }
 
-    label_text = final_label.capitalize()
     text = {
         "id": text_id, "type": "text",
-        "x": block["x"] + block["width"] / 2 - 50,
-        "y": block["y"] + block["height"] / 2 - 12.5,
-        "width": 100, "height": 25, "angle": 0,
+        "x": block["x"] + padding,
+        "y": block["y"] + padding,
+        "width": text_w, "height": block["height"] - padding * 2,
+        "angle": 0,
         "strokeColor": "#1e1e1e", "backgroundColor": color,
         "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid",
         "roughness": 1, "opacity": 100,
@@ -644,10 +656,10 @@ def _make_excalidraw_elements(block: dict, index: int) -> list[dict]:
         "seed": seed(), "version": 1, "versionNonce": seed(),
         "isDeleted": False, "boundElements": None,
         "updated": ts, "link": None, "locked": False,
-        "text": label_text, "fontSize": 16, "fontFamily": 5,
-        "textAlign": "center", "verticalAlign": "middle",
+        "text": content, "fontSize": font_size, "fontFamily": 5,
+        "textAlign": "left", "verticalAlign": "top",
         "containerId": rect_id,
-        "originalText": label_text, "autoResize": True, "lineHeight": 1.25,
+        "originalText": content, "autoResize": False, "lineHeight": line_height,
     }
     return [rect, text]
 
@@ -831,11 +843,11 @@ if uploaded_file is not None:
     image = Image.open(uploaded_file)
 
     with st.expander("Preview", expanded=True):
-        st.image(image, use_container_width=True)
+        st.image(image, width='stretch')
 
     st.divider()
 
-    if st.button("▶ Generate Excalidraw diagram", type="primary", use_container_width=True):
+    if st.button("▶ Generate Excalidraw diagram", type="primary", width='stretch'):
         try:
             with st.status("Processing…", expanded=True) as status:
                 st.write("🔍 Running OCR and cleaning tokens…")
@@ -865,7 +877,7 @@ if uploaded_file is not None:
                 file_name=filename,
                 mime="application/json",
                 type="primary",
-                use_container_width=True,
+                width='stretch',
             )
 
         except FileNotFoundError as e:
